@@ -23,6 +23,7 @@ async function run() {
 
         const db = client.db('artify')
         const artCollection = db.collection('artworks')
+        const favouritCollection = db.collection('favourites')
 
         app.get('/artworks', async (req, res) => {
             const result = await artCollection.find().toArray()
@@ -44,6 +45,40 @@ async function run() {
             res.send(result)
         })
 
+        app.put('/artworks/:id', async (req, res) => {
+            const { id } = req.params
+            const data = req.body
+            const objectId = new ObjectId(id)
+            const filter = { _id: objectId }
+            const update = {
+                $set: data
+            }
+            const result = await artCollection.updateOne(filter, update)
+            res.send(result)
+        })
+
+        app.patch('/artworks/like/:id', async (req, res) => {
+            const { id } = req.params;
+
+            const result = await artCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $inc: { likes: 1 } }
+            );
+
+            res.send(result);
+        });
+
+        app.patch('/artworks/view/:id', async (req, res) => {
+            const { id } = req.params;
+
+            const result = await artCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $inc: { views: 1 } }
+            );
+
+            res.send(result);
+        });
+
         app.delete('/artworks/:id', async (req, res) => {
             const { id } = req.params;
             const result = await artCollection.deleteOne({ _id: new ObjectId(id) })
@@ -53,12 +88,38 @@ async function run() {
 
 
         app.get('/latest-artworks', async (req, res) => {
-            const result = await artCollection.find().sort({
-                createdAt: 'asc'
-            }).limit(6).toArray()
+            const result = await artCollection.find().sort({ createdAt: -1 }).limit(6).toArray()
             res.send(result)
         })
 
+        app.get('/my-gallery', async (req, res) => {
+            const email = req.query.email
+            const result = await artCollection.find({ artistEmail: email }).toArray()
+            res.send(result);
+        })
+
+        app.post('/favourites', async (req, res) => {
+            const data = req.body;
+            const result = await favouritCollection.insertOne(data)
+            res.send(result)
+        })
+
+        app.get('/favourites', async (req, res) => {
+            const email = req.query.email;
+            const result = await favouritCollection.find({ userEmail: email }).toArray();
+
+            res.send(result);
+        });
+
+        app.delete('/favourites/:id', async (req, res) => {
+            const { id } = req.params;
+            const result = await favouritCollection.deleteOne({
+                _id: new ObjectId(id)
+            });
+
+            res.send(result);
+
+        });
 
 
         await client.db("admin").command({ ping: 1 });
