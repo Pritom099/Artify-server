@@ -1,13 +1,22 @@
 const express = require('express')
 const cors = require('cors')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const admin = require("firebase-admin");
+require("dotenv").config()
+const serviceAccount = require("./servicekey.json");
 const app = express()
 const port = 3000
 app.use(cors())
 app.use(express.json())
 
 
-const uri = "mongodb+srv://artifyUser:iYiEm9XEjb1uSZUW@cluster0.q6wdesq.mongodb.net/?appName=Cluster0";
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
+
+const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.q6wdesq.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
     serverApi: {
@@ -17,9 +26,34 @@ const client = new MongoClient(uri, {
     }
 });
 
+
+const verifyToken = async (req, res, next) => {
+    const authorization = req.headers.authorization;
+
+    if (!authorization) {
+        return res.status(401).send({
+            message: "Unauthorized access: Token missing"
+        });
+    }
+
+    const token = authorization.split(" ")[1];
+
+    try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+    }
+    catch (error) {
+        return res.status(401).send({
+            message: "Unauthorized access"
+        });
+    }
+};
+
+
 async function run() {
     try {
-        await client.connect();
+        // await client.connect();
 
         const db = client.db('artify')
         const artCollection = db.collection('artworks')
@@ -45,10 +79,19 @@ async function run() {
             res.send(result)
         })
 
-        app.put('/artworks/:id', async (req, res) => {
+        app.put('/artworks/:id', verifyToken, async (req, res) => {
             const { id } = req.params
             const data = req.body
             const objectId = new ObjectId(id)
+
+            const artwork = await artCollection.findOne({ _id: objectId });
+
+            if (artwork.artistEmail !== req.decoded.email) {
+                return res.status(403).send({
+                    message: "Forbidden access"
+                });
+            }
+
             const filter = { _id: objectId }
             const update = {
                 $set: data
@@ -79,8 +122,21 @@ async function run() {
             res.send(result);
         });
 
-        app.delete('/artworks/:id', async (req, res) => {
+        app.delete('/artworks/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
+            const artwork = await artCollection.findOne({
+                _id: new ObjectId(id)
+            });
+
+            if (!artwork) {
+                return res.status(404).send({ message: "Artwork not found" });
+            }
+
+            if (artwork.artistEmail !== req.decoded.email) {
+                return res.status(403).send({
+                    message: "Forbidden access"
+                });
+            }
             const result = await artCollection.deleteOne({ _id: new ObjectId(id) })
 
             res.send(result);
@@ -92,7 +148,7 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/my-gallery', async (req, res) => {
+        app.get('/my-gallery', verifyToken, async (req, res) => {
             const email = req.query.email
             const result = await artCollection.find({ artistEmail: email }).toArray()
             res.send(result);
@@ -104,7 +160,7 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/favourites', async (req, res) => {
+        app.get('/favourites', verifyToken, async (req, res) => {
             const email = req.query.email;
             const result = await favouritCollection.find({ userEmail: email }).toArray();
 
@@ -128,7 +184,7 @@ async function run() {
         })
 
 
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!")
     }
     finally {
