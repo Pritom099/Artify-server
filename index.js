@@ -6,7 +6,13 @@ require("dotenv").config()
 const serviceAccount = require("./servicekey.json");
 const app = express()
 const port = 3000
-app.use(cors())
+app.use(cors({
+    origin: [
+        "http://localhost:5173",
+        "https://leafy-eclair-360741.netlify.app"
+    ],
+    credentials: true
+}));
 app.use(express.json())
 
 
