@@ -75,6 +75,7 @@ async function run() {
         app.post('/artworks', async (req, res) => {
             const data = req.body;
             console.log(data);
+            data.createdAt = new Date(); 
             const result = await artCollection.insertOne(data);
             res.send(result)
         })
