@@ -121,6 +121,12 @@ async function run() {
 
         });
 
+        app.get('/search', async (req, res) => {
+            const search_text = req.query.search
+            const result = await artCollection.find({ title: { $regex: search_text, $options: "i" } }).toArray()
+            res.send(result)
+        })
+
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!")
