@@ -75,7 +75,7 @@ async function run() {
         app.post('/artworks', async (req, res) => {
             const data = req.body;
             console.log(data);
-            data.createdAt = new Date(); 
+            data.createdAt = new Date();
             const result = await artCollection.insertOne(data);
             res.send(result)
         })
@@ -145,9 +145,19 @@ async function run() {
 
 
         app.get('/latest-artworks', async (req, res) => {
-            const result = await artCollection.find().sort({ createdAt: -1 }).limit(6).toArray()
-            res.send(result)
-        })
+            try {
+                const result = await artCollection
+                    .find({})
+                    .sort({ _id: -1 })
+                    .limit(6)
+                    .toArray();
+
+                res.send(result);
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ error: "Server error" });
+            }
+        });
 
         app.get('/my-gallery', verifyToken, async (req, res) => {
             const email = req.query.email
