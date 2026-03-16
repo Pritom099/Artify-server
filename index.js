@@ -17,7 +17,7 @@ admin.initializeApp({
 
 
 
-const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.q6wdesq.mongodb.net/?appName=Cluster0`;
+const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.q6wdesq.mongodb.net/artify?retryWrites=true&w=majority`;
 
 const client = new MongoClient(uri, {
     serverApi: {
@@ -212,6 +212,4 @@ app.get('/', (req, res) => {
     res.send('Server is running Fine!')
 })
 
-app.listen(port, () => {
-    console.log(`Server is listening on port ${port}`)
-})
+module.exports = app;
