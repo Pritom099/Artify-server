@@ -1,24 +1,36 @@
-const express = require('express')
-const cors = require('cors')
+const express = require('express');
+const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const admin = require("firebase-admin");
-require("dotenv").config()
-const serviceAccount = require("./servicekey.json");
-const app = express()
-const port = process.env.PORT || 3000
-app.use(cors());
+const admin = require('firebase-admin');
+require('dotenv').config();
 
-app.use(express.json())
+const port = process.env.PORT || 3000;
+const app = express();
 
+// Middleware
+app.use(express.json());
+
+// Updated CORS configuration
+const corsOptions = {
+    origin: [
+        "http://localhost:5174",
+        "https://leafy-eclair-360741.netlify.app",
+         // Add your frontend port here
+    ],
+    credentials: true,
+};
+
+app.use(cors(corsOptions));
+
+// Firebase Admin Initialization
+const serviceAccount = require('./servicekey.json');
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-
-
+// MongoDB Connection
 const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@cluster0.q6wdesq.mongodb.net/artify?retryWrites=true&w=majority`;
-
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -27,189 +39,144 @@ const client = new MongoClient(uri, {
     }
 });
 
-
+// Token Verification Middleware
 const verifyToken = async (req, res, next) => {
     const authorization = req.headers.authorization;
-
-    if (!authorization) {
-        return res.status(401).send({
-            message: "Unauthorized access: Token missing"
-        });
-    }
+    if (!authorization) return res.status(401).send({ message: "Unauthorized access: Token missing" });
 
     const token = authorization.split(" ")[1];
-
     try {
         const decoded = await admin.auth().verifyIdToken(token);
         req.decoded = decoded;
         next();
-    }
-    catch (error) {
-        return res.status(401).send({
-            message: "Unauthorized access"
-        });
+    } catch (error) {
+        return res.status(401).send({ message: "Unauthorized access" });
     }
 };
 
-
+// Main Async Function
 async function run() {
     try {
-         await client.connect();
+        await client.connect();
 
-        const db = client.db('artify')
-        const artCollection = db.collection('artworks')
-        const favouritCollection = db.collection('favourites')
+        const db = client.db('artify');
+        const artCollection = db.collection('artworks');
+        const favouriteCollection = db.collection('favourites');
 
+        // Artworks Routes
         app.get('/artworks', async (req, res) => {
-            const result = await artCollection.find().toArray()
-            res.send(result)
-        })
+            const result = await artCollection.find().toArray();
+            res.send(result);
+        });
 
         app.get('/artworks/:id', async (req, res) => {
-            const { id } = req.params
-            const objectId = new ObjectId(id)
-
-            const result = await artCollection.findOne({ _id: objectId })
-            res.send(result)
-        })
+            const { id } = req.params;
+            const result = await artCollection.findOne({ _id: new ObjectId(id) });
+            res.send(result);
+        });
 
         app.post('/artworks', async (req, res) => {
             const data = req.body;
-            console.log(data);
             data.createdAt = new Date();
             const result = await artCollection.insertOne(data);
-            res.send(result)
-        })
+            res.send(result);
+        });
 
         app.put('/artworks/:id', verifyToken, async (req, res) => {
-            const { id } = req.params
-            const data = req.body
-            const objectId = new ObjectId(id)
+            const { id } = req.params;
+            const data = req.body;
+            const artwork = await artCollection.findOne({ _id: new ObjectId(id) });
 
-            const artwork = await artCollection.findOne({ _id: objectId });
+            if (!artwork) return res.status(404).send({ message: "Artwork not found" });
+            if (artwork.artistEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
 
-            if (artwork.artistEmail !== req.decoded.email) {
-                return res.status(403).send({
-                    message: "Forbidden access"
-                });
-            }
-
-            const filter = { _id: objectId }
-            const update = {
-                $set: data
-            }
-            const result = await artCollection.updateOne(filter, update)
-            res.send(result)
-        })
+            const result = await artCollection.updateOne({ _id: new ObjectId(id) }, { $set: data });
+            res.send(result);
+        });
 
         app.patch('/artworks/like/:id', async (req, res) => {
             const { id } = req.params;
-
             const result = await artCollection.updateOne(
                 { _id: new ObjectId(id) },
                 { $inc: { likes: 1 } }
             );
-
             res.send(result);
         });
 
         app.patch('/artworks/view/:id', async (req, res) => {
             const { id } = req.params;
-
             const result = await artCollection.updateOne(
                 { _id: new ObjectId(id) },
                 { $inc: { views: 1 } }
             );
-
             res.send(result);
         });
 
         app.delete('/artworks/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
-            const artwork = await artCollection.findOne({
-                _id: new ObjectId(id)
-            });
+            const artwork = await artCollection.findOne({ _id: new ObjectId(id) });
 
-            if (!artwork) {
-                return res.status(404).send({ message: "Artwork not found" });
-            }
+            if (!artwork) return res.status(404).send({ message: "Artwork not found" });
+            if (artwork.artistEmail !== req.decoded.email) return res.status(403).send({ message: "Forbidden access" });
 
-            if (artwork.artistEmail !== req.decoded.email) {
-                return res.status(403).send({
-                    message: "Forbidden access"
-                });
-            }
-            const result = await artCollection.deleteOne({ _id: new ObjectId(id) })
-
+            const result = await artCollection.deleteOne({ _id: new ObjectId(id) });
             res.send(result);
-        })
+        });
 
-
-        app.get('/latest-artworks', async (req, res) => {
-            try {
-                const result = await artCollection
-                    .find({})
-                    .sort({ _id: -1 })
-                    .limit(6)
-                    .toArray();
-
-                res.send(result);
-            } catch (error) {
-                console.error(error);
-                res.status(500).send({ error: "Server error" });
-            }
+        app.get("/latest-artworks", async (req, res) => {
+            const result = await artCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
+            res.send(result);
         });
 
         app.get('/my-gallery', verifyToken, async (req, res) => {
-            const email = req.query.email
-            const result = await artCollection.find({ artistEmail: email }).toArray()
+            const email = req.query.email;
+            const result = await artCollection.find({ artistEmail: email }).toArray();
             res.send(result);
-        })
+        });
 
+        // Favourites Routes
         app.post('/favourites', async (req, res) => {
             const data = req.body;
-            const result = await favouritCollection.insertOne(data)
-            res.send(result)
-        })
+            const result = await favouriteCollection.insertOne(data);
+            res.send(result);
+        });
 
         app.get('/favourites', verifyToken, async (req, res) => {
             const email = req.query.email;
-            const result = await favouritCollection.find({ userEmail: email }).toArray();
-
+            const result = await favouriteCollection.find({ userEmail: email }).toArray();
             res.send(result);
         });
 
         app.delete('/favourites/:id', async (req, res) => {
             const { id } = req.params;
-            const result = await favouritCollection.deleteOne({
-                _id: new ObjectId(id)
-            });
-
+            const result = await favouriteCollection.deleteOne({ _id: new ObjectId(id) });
             res.send(result);
-
         });
 
+        // Search
         app.get('/search', async (req, res) => {
-            const search_text = req.query.search
-            const result = await artCollection.find({ title: { $regex: search_text, $options: "i" } }).toArray()
-            res.send(result)
-        })
+            const search_text = req.query.search || '';
+            const result = await artCollection.find({ title: { $regex: search_text, $options: "i" } }).toArray();
+            res.send(result);
+        });
 
-
+        // Test MongoDB connection
         await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!")
-    }
-    finally {
-
+        console.log("✅ Connected to MongoDB successfully!");
+    } catch (error) {
+        console.error(error);
     }
 }
+
 run().catch(console.dir);
 
-
-
-
+// Root route
 app.get('/', (req, res) => {
-    res.send('Server is running Fine!')
-})
+    res.send('Server is running fine!');
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
 
 module.exports = app;
